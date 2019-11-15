@@ -38,6 +38,7 @@ type testStmtSummarySuite struct {
 func (s *testStmtSummarySuite) SetUpSuite(c *C) {
 	s.ssMap = newStmtSummaryByDigestMap()
 	s.ssMap.SetEnabled("1", false)
+	s.ssMap.SetIntervalMinutes("30", false)
 }
 
 func TestT(t *testing.T) {
@@ -48,6 +49,10 @@ func TestT(t *testing.T) {
 // Test stmtSummaryByDigest.AddStatement.
 func (s *testStmtSummarySuite) TestAddStatement(c *C) {
 	s.ssMap.Clear()
+	now := time.Now().Unix()
+	s.ssMap.beginTimeForCurInterval = now
+	// to disable expiring
+	s.ssMap.lastCheckExpireTime = now + 60
 
 	mu := struct {
 		sync.Mutex
@@ -109,6 +114,7 @@ func (s *testStmtSummarySuite) TestAddStatement(c *C) {
 		digest:     stmtExecInfo1.Digest,
 	}
 	expectedSummary := stmtSummaryByDigest{
+		beginTime:            now,
 		schemaName:           stmtExecInfo1.SchemaName,
 		digest:               stmtExecInfo1.Digest,
 		normalizedSQL:        stmtExecInfo1.NormalizedSQL,
@@ -454,7 +460,8 @@ func (s *testStmtSummarySuite) TestAddStatement(c *C) {
 }
 
 func matchStmtSummaryByDigest(first *stmtSummaryByDigest, second *stmtSummaryByDigest) bool {
-	if first.schemaName != second.schemaName ||
+	if first.beginTime != second.beginTime ||
+		first.schemaName != second.schemaName ||
 		first.digest != second.digest ||
 		first.normalizedSQL != second.normalizedSQL ||
 		first.sampleSQL != second.sampleSQL ||
@@ -540,6 +547,8 @@ func match(c *C, row []types.Datum, expected ...interface{}) {
 // Test stmtSummaryByDigest.ToDatum
 func (s *testStmtSummarySuite) TestToDatum(c *C) {
 	s.ssMap.Clear()
+	now := time.Now().Unix()
+	s.ssMap.beginTimeForCurInterval = now
 
 	mu := struct {
 		sync.Mutex

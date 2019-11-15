@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -58,14 +59,23 @@ type stmtSummaryByDigestMap struct {
 	// It's rare to read concurrently, so RWMutex is not needed.
 	sync.Mutex
 	summaryMap *kvcache.SimpleLRUCache
+	// These fields are used for rolling summary.
+	beginTimeForCurInterval int64
+	lastCheckExpireTime     int64
 
-	// enabledWrapper encapsulates variables needed to judge whether statement summary is enabled.
-	enabledWrapper struct {
+	// sysVars encapsulates system variables needed to control statement summary.
+	sysVars struct {
 		sync.RWMutex
 		// enabled indicates whether statement summary is enabled in current server.
 		sessionEnabled string
 		// setInSession indicates whether statement summary has been set in any session.
 		globalEnabled string
+		// XXXIntervalMinutes indicates the refresh interval of summaries.
+		// It must be > 0.
+		sessionIntervalMinutes string
+		globalIntervalMinutes  string
+		// A cached result. It must be read atomically.
+		intervalMinutes int32
 	}
 }
 
@@ -76,6 +86,8 @@ var StmtSummaryByDigestMap = newStmtSummaryByDigestMap()
 type stmtSummaryByDigest struct {
 	// It's rare to read concurrently, so RWMutex is not needed.
 	sync.Mutex
+	// Each summary is summarized between [beginTime, beginTime + interval]
+	beginTime int64
 	// basic
 	schemaName    string
 	digest        string
@@ -168,16 +180,21 @@ type StmtExecInfo struct {
 func newStmtSummaryByDigestMap() *stmtSummaryByDigestMap {
 	maxStmtCount := config.GetGlobalConfig().StmtSummary.MaxStmtCount
 	ssMap := &stmtSummaryByDigestMap{
-		summaryMap: kvcache.NewSimpleLRUCache(maxStmtCount, 0, 0),
+		summaryMap:              kvcache.NewSimpleLRUCache(maxStmtCount, 0, 0),
+		beginTimeForCurInterval: 0,
+		lastCheckExpireTime:     0,
 	}
-	// enabledWrapper.defaultEnabled will be initialized in package variable.
-	ssMap.enabledWrapper.sessionEnabled = ""
-	ssMap.enabledWrapper.globalEnabled = ""
+	// sysVars.defaultEnabled will be initialized in package variable.
+	ssMap.sysVars.sessionEnabled = ""
+	ssMap.sysVars.globalEnabled = ""
 	return ssMap
 }
 
 // AddStatement adds a statement to StmtSummaryByDigestMap.
 func (ssMap *stmtSummaryByDigestMap) AddStatement(sei *StmtExecInfo) {
+	// All times are count in seconds.
+	now := time.Now().Unix()
+
 	key := &stmtSummaryByDigestKey{
 		schemaName: sei.SchemaName,
 		digest:     sei.Digest,
@@ -193,9 +210,20 @@ func (ssMap *stmtSummaryByDigestMap) AddStatement(sei *StmtExecInfo) {
 			return nil, false
 		}
 
+		// Check expiration every minute.
+		if now >= ssMap.lastCheckExpireTime+60 {
+			intervalSeconds := ssMap.IntervalMinutes() * 60
+			if ssMap.beginTimeForCurInterval+intervalSeconds <= now {
+				// `beginTimeForCurInterval` is a multiple of intervalSeconds.
+				ssMap.beginTimeForCurInterval = now / intervalSeconds * intervalSeconds
+			}
+			// `lastCheckExpireTime` is a multiple of 60.
+			ssMap.lastCheckExpireTime = now / 60 * 60
+		}
+
 		value, ok := ssMap.summaryMap.Get(key)
 		if !ok {
-			newSummary := newStmtSummaryByDigest(sei)
+			newSummary := newStmtSummaryByDigest(sei, ssMap.beginTimeForCurInterval)
 			ssMap.summaryMap.Put(key, newSummary)
 		}
 		return value, ok
@@ -213,6 +241,8 @@ func (ssMap *stmtSummaryByDigestMap) Clear() {
 	defer ssMap.Unlock()
 
 	ssMap.summaryMap.DeleteAll()
+	ssMap.beginTimeForCurInterval = 0
+	ssMap.lastCheckExpireTime = 0
 }
 
 // ToDatum converts statement summary to datum.
@@ -254,15 +284,15 @@ func (ssMap *stmtSummaryByDigestMap) GetMoreThanOnceSelect() ([]string, []string
 func (ssMap *stmtSummaryByDigestMap) SetEnabled(value string, inSession bool) {
 	value = ssMap.normalizeEnableValue(value)
 
-	ssMap.enabledWrapper.Lock()
+	ssMap.sysVars.Lock()
 	if inSession {
-		ssMap.enabledWrapper.sessionEnabled = value
+		ssMap.sysVars.sessionEnabled = value
 	} else {
-		ssMap.enabledWrapper.globalEnabled = value
+		ssMap.sysVars.globalEnabled = value
 	}
-	sessionEnabled := ssMap.enabledWrapper.sessionEnabled
-	globalEnabled := ssMap.enabledWrapper.globalEnabled
-	ssMap.enabledWrapper.Unlock()
+	sessionEnabled := ssMap.sysVars.sessionEnabled
+	globalEnabled := ssMap.sysVars.globalEnabled
+	ssMap.sysVars.Unlock()
 
 	// Clear all summaries once statement summary is disabled.
 	var needClear bool
@@ -278,14 +308,14 @@ func (ssMap *stmtSummaryByDigestMap) SetEnabled(value string, inSession bool) {
 
 // Enabled returns whether statement summary is enabled.
 func (ssMap *stmtSummaryByDigestMap) Enabled() bool {
-	ssMap.enabledWrapper.RLock()
-	defer ssMap.enabledWrapper.RUnlock()
+	ssMap.sysVars.RLock()
+	defer ssMap.sysVars.RUnlock()
 
 	var enabled bool
-	if ssMap.isSet(ssMap.enabledWrapper.sessionEnabled) {
-		enabled = ssMap.isEnabled(ssMap.enabledWrapper.sessionEnabled)
+	if ssMap.isSet(ssMap.sysVars.sessionEnabled) {
+		enabled = ssMap.isEnabled(ssMap.sysVars.sessionEnabled)
 	} else {
-		enabled = ssMap.isEnabled(ssMap.enabledWrapper.globalEnabled)
+		enabled = ssMap.isEnabled(ssMap.sysVars.globalEnabled)
 	}
 	return enabled
 }
@@ -313,8 +343,44 @@ func (ssMap *stmtSummaryByDigestMap) isSet(value string) bool {
 	return value != ""
 }
 
+// SetIntervalMinutes sets interval minutes in ssMap.sysVars.
+func (ssMap *stmtSummaryByDigestMap) SetIntervalMinutes(value string, inSession bool) {
+	ssMap.sysVars.Lock()
+	if inSession {
+		ssMap.sysVars.sessionIntervalMinutes = value
+	} else {
+		ssMap.sysVars.globalIntervalMinutes = value
+	}
+	sessionIntervalMinutes := ssMap.sysVars.sessionIntervalMinutes
+	globalIntervalMinutes := ssMap.sysVars.globalIntervalMinutes
+	ssMap.sysVars.Unlock()
+
+	// Calculate the cached `intervalMinutes`.
+	var minutes int
+	var err error
+	if ssMap.isSet(sessionIntervalMinutes) {
+		minutes, err = strconv.Atoi(sessionIntervalMinutes)
+		if err != nil {
+			minutes = 0
+		}
+	}
+	if minutes <= 0 {
+		minutes, err = strconv.Atoi(globalIntervalMinutes)
+		if err != nil {
+			minutes = 0
+		}
+	}
+	if minutes > 0 {
+		atomic.StoreInt32(&ssMap.sysVars.intervalMinutes, int32(minutes))
+	}
+}
+
+func (ssMap *stmtSummaryByDigestMap) IntervalMinutes() int64 {
+	return int64(atomic.LoadInt32(&ssMap.sysVars.intervalMinutes))
+}
+
 // newStmtSummaryByDigest creates a stmtSummaryByDigest from StmtExecInfo
-func newStmtSummaryByDigest(sei *StmtExecInfo) *stmtSummaryByDigest {
+func newStmtSummaryByDigest(sei *StmtExecInfo, beginTime int64) *stmtSummaryByDigest {
 	// Trim SQL to size MaxSQLLength.
 	maxSQLLength := config.GetGlobalConfig().StmtSummary.MaxSQLLength
 	normalizedSQL := sei.NormalizedSQL
@@ -327,6 +393,7 @@ func newStmtSummaryByDigest(sei *StmtExecInfo) *stmtSummaryByDigest {
 	}
 
 	ssbd := &stmtSummaryByDigest{
+		beginTime:     beginTime,
 		schemaName:    sei.SchemaName,
 		digest:        sei.Digest,
 		normalizedSQL: normalizedSQL,
@@ -480,6 +547,7 @@ func (ssbd *stmtSummaryByDigest) toDatum() []types.Datum {
 	defer ssbd.Unlock()
 
 	return types.MakeDatums(
+		types.Time{Time: types.FromGoTime(time.Unix(ssbd.beginTime, 0)), Type: mysql.TypeTimestamp},
 		ssbd.schemaName,
 		ssbd.digest,
 		ssbd.normalizedSQL,
