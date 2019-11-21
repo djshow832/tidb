@@ -49,7 +49,7 @@ func (key *stmtSummaryByDigestKey) Hash() []byte {
 	if len(key.hash) == 0 {
 		key.hash = make([]byte, 0, len(key.schemaName)+len(key.digest))
 		key.hash = append(key.hash, hack.Slice(key.digest)...)
-		key.hash = append(key.hash, hack.Slice(strings.ToLower(key.schemaName))...)
+		key.hash = append(key.hash, hack.Slice(key.schemaName)...)
 	}
 	return key.hash
 }
