@@ -580,7 +580,7 @@ var defaultConf = Config{
 	},
 	StmtSummary: StmtSummary{
 		Enable:          true,
-		MaxStmtCount:    200,
+		MaxStmtCount:    300,
 		MaxSQLLength:    4096,
 		RefreshInterval: 1800,
 		HistorySize:     24,
