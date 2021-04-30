@@ -19,6 +19,8 @@ package tables
 
 import (
 	"context"
+	"github.com/pingcap/tidb/statistics"
+	"github.com/pingcap/tidb/util/tableutil"
 	"math"
 	"strconv"
 	"strings"
@@ -590,7 +592,7 @@ func TryGetCommonPkColumns(tbl table.Table) []*table.Column {
 
 func addTemporaryTable(sctx sessionctx.Context, tblInfo *model.TableInfo) {
 	tempTable := sctx.GetSessionVars().GetTemporaryTable(tblInfo)
-	tempTable.Modified = true
+	tempTable.SetModified(true)
 }
 
 // AddRecord implements table.Table AddRecord interface.
@@ -1371,7 +1373,7 @@ func (t *TableCommon) Allocators(ctx sessionctx.Context) autoid.Allocators {
 	} else if ctx.GetSessionVars().IDAllocator == nil {
 		// Use an independent allocator for global temporary tables.
 		if t.meta.TempTableType == model.TempTableGlobal {
-			alloc := ctx.GetSessionVars().GetTemporaryTable(t.meta).AutoIdAllocator
+			alloc := ctx.GetSessionVars().GetTemporaryTable(t.meta).GetAllocator()
 			return autoid.Allocators{alloc}
 		} else {
 			return t.allocs
@@ -1766,4 +1768,39 @@ func BuildTableScanFromInfos(tableInfo *model.TableInfo, columnInfos []*model.Co
 		tsExec.PrimaryPrefixColumnIds = PrimaryPrefixColumnIDs(tableInfo)
 	}
 	return tsExec
+}
+
+// TemporaryTable is used to store transaction-specific or session-specific information for global / local temporary tables.
+// For example, stats and autoID should have their own copies of data, instead of being shared by all sessions.
+type TemporaryTable struct {
+
+	// Whether it's modified in this transaction.
+	Modified bool
+	// The stats of this table (*statistics.Table). So far it's always pseudo stats.
+	// Define it an interface{} here to avoid cycle imports.
+	Stats interface{}
+	// The autoID allocator of this table.
+	AutoIdAllocator autoid.Allocator
+}
+
+
+func NewTemporaryTable(tblInfo *model.TableInfo) tableutil.TempTable {
+	return &TemporaryTable{
+		Modified: false,
+		Stats: statistics.PseudoTable(tblInfo),
+		AutoIdAllocator: autoid.NewAllocatorFromTempTblInfo(tblInfo),
+	}
+}
+
+
+func (t *TemporaryTable) SetModified(bool) {
+	//
+}
+
+func (t *TemporaryTable) GetModified() bool {
+	return t.Modified
+}
+
+func (t *TemporaryTable) GetAllocator() autoid.Allocator {
+	return t.AutoIdAllocator
 }

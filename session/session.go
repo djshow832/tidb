@@ -514,7 +514,7 @@ func (s *session) doCommit(ctx context.Context) error {
 	if tables := s.sessionVars.TxnCtx.GlobalTemporaryTables; tables != nil {
 		memBuffer := s.txn.GetMemBuffer()
 		for tid, tempTable := range tables {
-			if !tempTable.Modified {
+			if !tempTable.GetModified() {
 				continue
 			}
 			seekKey := tablecodec.EncodeTablePrefix(tid)

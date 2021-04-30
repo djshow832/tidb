@@ -18,6 +18,7 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
+	"github.com/pingcap/tidb/util/tableutil"
 	"math"
 	"math/rand"
 	"net"
@@ -176,7 +177,7 @@ type TransactionContext struct {
 
 	// GlobalTemporaryTables is used to store transaction-specific information for global temporary tables.
 	// It can also be stored in sessionCtx with local temporary tables, but it's easier to clean this data after transaction ends.
-	GlobalTemporaryTables map[int64]*TemporaryTable
+	GlobalTemporaryTables map[int64] tableutil.TempTable
 }
 
 // GetShard returns the shard prefix for the next `count` rowids.
@@ -1428,15 +1429,15 @@ func (s *SessionVars) LazyCheckKeyNotExists() bool {
 }
 
 // GetTemporaryTable returns a TemporaryTable by tableInfo.
-func (s *SessionVars) GetTemporaryTable(tblInfo *model.TableInfo) *TemporaryTable {
+func (s *SessionVars) GetTemporaryTable(tblInfo *model.TableInfo) tableutil.TempTable {
 	if tblInfo.TempTableType == model.TempTableGlobal {
 		if s.TxnCtx.GlobalTemporaryTables == nil {
-			s.TxnCtx.GlobalTemporaryTables = make(map[int64]*TemporaryTable)
+			s.TxnCtx.GlobalTemporaryTables = make(map[int64] tableutil.TempTable)
 		}
 		globalTempTables := s.TxnCtx.GlobalTemporaryTables
 		globalTempTable, ok := globalTempTables[tblInfo.ID]
 		if !ok {
-			globalTempTable = newTemporaryTable(tblInfo)
+			globalTempTable = tableutil.TempTableFromMeta(tblInfo)
 			globalTempTables[tblInfo.ID] = globalTempTable
 		}
 		return globalTempTable
@@ -2073,24 +2074,4 @@ type QueryInfo struct {
 	StartTS     uint64 `json:"start_ts"`
 	ForUpdateTS uint64 `json:"for_update_ts"`
 	ErrMsg      string `json:"error,omitempty"`
-}
-
-// TemporaryTable is used to store transaction-specific or session-specific information for global / local temporary tables.
-// For example, stats and autoID should have their own copies of data, instead of being shared by all sessions.
-type TemporaryTable struct {
-	// Whether it's modified in this transaction.
-	Modified bool
-	// The stats of this table (*statistics.Table). So far it's always pseudo stats.
-	// Define it an interface{} here to avoid cycle imports.
-	Stats interface{}
-	// The autoID allocator of this table.
-	AutoIdAllocator autoid.Allocator
-}
-
-func newTemporaryTable(tblInfo *model.TableInfo) *TemporaryTable {
-	return &TemporaryTable{
-		Modified: false,
-		// Stats: statistics.PseudoTable(tblInfo),
-		AutoIdAllocator: autoid.NewAllocatorFromTempTblInfo(tblInfo),
-	}
 }
