@@ -9609,6 +9609,10 @@ SetStmt:
 	{
 		$$ = &ast.SetConfigStmt{Instance: $3, Name: $4, Value: $6}
 	}
+|	"SET" "SESSION_STATES" stringLit
+	{
+		$$ = &ast.SetSessionStatesStmt{SessionStates:$3}
+	}
 
 SetRoleStmt:
 	"SET" "ROLE" SetRoleOpt
