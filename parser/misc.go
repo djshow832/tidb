@@ -628,6 +628,7 @@ var tokenMap = map[string]int{
 	"SERIAL":                   serial,
 	"SERIALIZABLE":             serializable,
 	"SESSION":                  session,
+	"SESSION_STATES":           sessionStates,
 	"SET":                      set,
 	"SETVAL":                   setval,
 	"SHARD_ROW_ID_BITS":        shardRowIDBits,

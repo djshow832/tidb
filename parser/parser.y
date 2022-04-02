@@ -733,6 +733,7 @@ import (
 	pump                       "PUMP"
 	samples                    "SAMPLES"
 	sampleRate                 "SAMPLERATE"
+	sessionStates              "SESSION_STATES"
 	statistics                 "STATISTICS"
 	stats                      "STATS"
 	statsMeta                  "STATS_META"
@@ -6102,6 +6103,7 @@ TiDBKeyword:
 |	"PUMP"
 |	"SAMPLES"
 |	"SAMPLERATE"
+|	"SESSION_STATES"
 |	"STATISTICS"
 |	"STATS"
 |	"STATS_META"
@@ -10683,6 +10685,10 @@ ShowTargetFilterable:
 		$$ = &ast.ShowStmt{
 			Tp: ast.ShowPlugins,
 		}
+	}
+|	"SESSION_STATES"
+	{
+		$$ = &ast.ShowStmt{Tp: ast.ShowSessionStates}
 	}
 |	"STATS_EXTENDED"
 	{
