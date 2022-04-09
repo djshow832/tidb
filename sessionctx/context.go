@@ -148,6 +148,10 @@ type Context interface {
 	GetStmtStats() *stmtstats.StatementStats
 	// ShowProcess returns ProcessInfo running in current Context
 	ShowProcess() *util.ProcessInfo
+	// EncodeSessionStates encodes session states into a JSON.
+	EncodeSessionStates() ([]byte, error)
+	// DecodeSessionStates decodes a map into session states.
+	DecodeSessionStates([]byte) error
 }
 
 type basicCtxType int

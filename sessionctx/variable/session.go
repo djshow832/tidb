@@ -41,6 +41,7 @@ import (
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/parser/terror"
+	"github.com/pingcap/tidb/sessionctx/session_states"
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
 	pumpcli "github.com/pingcap/tidb/tidb-binlog/pump_client"
 	"github.com/pingcap/tidb/types"
@@ -1680,6 +1681,40 @@ func (s *SessionVars) GetTemporaryTable(tblInfo *model.TableInfo) tableutil.Temp
 		return tempTable
 	}
 
+	return nil
+}
+
+// EncodeSessionStates saves session states into SessionStates.
+func (s *SessionVars) EncodeSessionStates(sessionStates *session_states.SessionStates) error {
+	var err error
+	func() {
+		s.UsersLock.RLock()
+		defer s.UsersLock.RUnlock()
+		if err = sessionStates.EncodeUserVars(s.Users); err != nil {
+			return
+		}
+		sessionStates.EncodeUserVarFields(s.UserVarTypes)
+	}()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// DecodeSessionStates restore session states from SessionStates.
+func (s *SessionVars) DecodeSessionStates(sessionStates *session_states.SessionStates) error {
+	var err error
+	func() {
+		s.UsersLock.Lock()
+		defer s.UsersLock.Unlock()
+		if s.Users, err = sessionStates.DecodeUserVars(); err != nil {
+			return
+		}
+		s.UserVarTypes = sessionStates.DecodeUserVarFields()
+	}()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

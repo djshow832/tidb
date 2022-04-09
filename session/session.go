@@ -78,6 +78,7 @@ import (
 	"github.com/pingcap/tidb/session/txninfo"
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/sessionctx/binloginfo"
+	"github.com/pingcap/tidb/sessionctx/session_states"
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/statistics"
@@ -168,6 +169,9 @@ type Session interface {
 	SetDiskFullOpt(level kvrpcpb.DiskFullOpt)
 	GetDiskFullOpt() kvrpcpb.DiskFullOpt
 	ClearDiskFullOpt()
+
+	EncodeSessionStates() ([]byte, error)
+	DecodeSessionStates([]byte) error
 }
 
 var _ Session = (*session)(nil)
@@ -3437,4 +3441,37 @@ func (s *session) getSnapshotInterceptor() kv.SnapshotInterceptor {
 
 func (s *session) GetStmtStats() *stmtstats.StatementStats {
 	return s.stmtStats
+}
+
+func (s *session) EncodeSessionStates() ([]byte, error) {
+	s.txn.mu.Lock()
+	if s.txn.Valid() {
+		s.txn.mu.Unlock()
+		return nil, errors.New("session is in a transaction")
+	}
+	s.txn.mu.Unlock()
+
+	sessionStates := &session_states.SessionStates{}
+	err := s.sessionVars.EncodeSessionStates(sessionStates)
+	if err != nil {
+		return nil, err
+	}
+
+	sessionStates.LockedTables = s.lockedTables
+	result, err := json.Marshal(sessionStates)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	return result, nil
+}
+
+func (s *session) DecodeSessionStates(data []byte) error {
+	var sessionStates session_states.SessionStates
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&sessionStates); err != nil {
+		return errors.Trace(err)
+	}
+	s.lockedTables = sessionStates.LockedTables
+	return s.sessionVars.DecodeSessionStates(&sessionStates)
 }
