@@ -234,7 +234,7 @@ func (e *ShowExec) fetchAll(ctx context.Context) error {
 	case ast.ShowPlacementForPartition:
 		return e.fetchShowPlacementForPartition(ctx)
 	case ast.ShowSessionStates:
-		return e.fetchShowSessionStates(ctx)
+		return e.fetchShowSessionStates()
 	}
 	return nil
 }
@@ -1893,7 +1893,17 @@ func (e *ShowExec) fetchShowBuiltins() error {
 	return nil
 }
 
-func (e *ShowExec) fetchShowSessionStates(ctx context.Context) error {
+func (e *ShowExec) fetchShowSessionStates() error {
+	data, err := e.ctx.EncodeSessionStates()
+	if err != nil {
+		return err
+	}
+	valuesJSON := json.BinaryJSON{}
+	err = valuesJSON.UnmarshalJSON(data)
+	if err != nil {
+		return err
+	}
+	e.appendRow([]interface{}{valuesJSON})
 	return nil
 }
 

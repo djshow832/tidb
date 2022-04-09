@@ -1280,10 +1280,10 @@ func NewDuration(hour, minute, second, microsecond int, fsp int) Duration {
 
 // Duration is the type for MySQL TIME type.
 type Duration struct {
-	gotime.Duration
+	gotime.Duration `json:"duration"`
 	// Fsp is short for Fractional Seconds Precision.
 	// See http://dev.mysql.com/doc/refman/5.7/en/fractional-seconds.html
-	Fsp int
+	Fsp int `json:"fsp"`
 }
 
 // MaxMySQLDuration returns Duration with maximum mysql time.

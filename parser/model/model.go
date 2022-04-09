@@ -425,9 +425,9 @@ func (s SessionInfo) String() string {
 
 // TableLockTpInfo is composed by schema ID, table ID and table lock type.
 type TableLockTpInfo struct {
-	SchemaID int64
-	TableID  int64
-	Tp       TableLockType
+	SchemaID int64         `json:"schema-id"`
+	TableID  int64         `json:"table-id"`
+	Tp       TableLockType `json:"tp"`
 }
 
 // TableLockState is the state for table lock.

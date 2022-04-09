@@ -108,6 +108,16 @@ func (c *Context) ShowProcess() *util.ProcessInfo {
 	return &util.ProcessInfo{}
 }
 
+// EncodeSessionStates implements sessionctx.Context EncodeSessionStates interface.
+func (c *Context) EncodeSessionStates() ([]byte, error) {
+	return nil, errors.Errorf("Not Supported")
+}
+
+// DecodeSessionStates implements sessionctx.Context DecodeSessionStates interface.
+func (c *Context) DecodeSessionStates([]byte) error {
+	return errors.Errorf("Not Supported")
+}
+
 type mockDDLOwnerChecker struct{}
 
 func (c *mockDDLOwnerChecker) IsOwner() bool { return true }

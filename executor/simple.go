@@ -146,7 +146,7 @@ func (e *SimpleExec) Next(ctx context.Context, req *chunk.Chunk) (err error) {
 	case *ast.SetPwdStmt:
 		err = e.executeSetPwd(ctx, x)
 	case *ast.SetSessionStatesStmt:
-		err = e.executeSetSessionStates(ctx, x)
+		err = e.executeSetSessionStates(x)
 	case *ast.KillStmt:
 		err = e.executeKillStmt(ctx, x)
 	case *ast.BinlogStmt:
@@ -1657,8 +1657,8 @@ func asyncDelayShutdown(p *os.Process, delay time.Duration) {
 	}
 }
 
-func (e *SimpleExec) executeSetSessionStates(ctx context.Context, s *ast.SetSessionStatesStmt) error {
-	return nil
+func (e *SimpleExec) executeSetSessionStates(s *ast.SetSessionStatesStmt) error {
+	return e.ctx.DecodeSessionStates([]byte(s.SessionStates))
 }
 
 func (e *SimpleExec) executeAdmin(s *ast.AdminStmt) error {

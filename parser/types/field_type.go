@@ -38,14 +38,14 @@ var (
 
 // FieldType records field type information.
 type FieldType struct {
-	Tp      byte
-	Flag    uint
-	Flen    int
-	Decimal int
-	Charset string
-	Collate string
+	Tp      byte   `json:"tp,omitempty"`
+	Flag    uint   `json:"flag,omitempty"`
+	Flen    int    `json:"flen,omitempty"`
+	Decimal int    `json:"decimal,omitempty"`
+	Charset string `json:"charset,omitempty"`
+	Collate string `json:"collate,omitempty"`
 	// Elems is the element list for enum and set type.
-	Elems []string
+	Elems []string `json:"elems,omitempty"`
 }
 
 // NewFieldType returns a FieldType,
