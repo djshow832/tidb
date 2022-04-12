@@ -1686,6 +1686,7 @@ func (s *SessionVars) GetTemporaryTable(tblInfo *model.TableInfo) tableutil.Temp
 
 // EncodeSessionStates saves session states into SessionStates.
 func (s *SessionVars) EncodeSessionStates(sessionStates *session_states.SessionStates) error {
+	// Encode user-defined variables.
 	var err error
 	func() {
 		s.UsersLock.RLock()
@@ -1697,6 +1698,49 @@ func (s *SessionVars) EncodeSessionStates(sessionStates *session_states.SessionS
 	}()
 	if err != nil {
 		return err
+	}
+
+	// Encode session variables.
+	sessionStates.SystemVars = make(map[string]string)
+	for _, sv := range GetSysVars() {
+		// Hidden and noop variables won't be modified.
+		if sv.Hidden || sv.IsNoop {
+			continue
+		}
+		// If they are shown, there will be a security issue.
+		//if sem.IsEnabled() && sem.IsInvisibleSysVar(sv.Name) {
+		//	continue
+		//}
+		// Ignore read-only variables here. We can encode them into SessionStates manually.
+		if sv.ReadOnly {
+			continue
+		}
+		// None-scoped and instance-scoped variables cannot be modified.
+		// More and more instance-scoped variables will be attached with `ScopeInstance`.
+		if sv.HasNoneScope() || sv.HasInstanceScope() || !sv.HasSessionScope() {
+			continue
+		}
+		switch sv.Name {
+		case Timestamp:
+			if val, ok := s.systems[Timestamp]; ok && val != DefTimestamp {
+				sessionStates.SystemVars[sv.Name] = val
+			}
+			continue
+		}
+		// Get all session variables because the default values may also change among versions.
+		if sv.GetSession != nil {
+			val, err := sv.GetSession(s)
+			if err != nil {
+				return err
+			}
+			val = sv.ValidateWithRelaxedValidation(s, val, ScopeSession)
+			sessionStates.SystemVars[sv.Name] = val
+			continue
+		}
+		// We don't check global variables because they are the same in the new session.
+		if val, ok := s.systems[sv.Name]; ok {
+			sessionStates.SystemVars[sv.Name] = val
+		}
 	}
 	return nil
 }
@@ -1714,6 +1758,12 @@ func (s *SessionVars) DecodeSessionStates(sessionStates *session_states.SessionS
 	}()
 	if err != nil {
 		return err
+	}
+
+	for name, val := range sessionStates.SystemVars {
+		if err = SetSessionSystemVar(s, name, val); err != nil {
+			return err
+		}
 	}
 	return nil
 }
