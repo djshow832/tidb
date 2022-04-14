@@ -145,6 +145,8 @@ type Session interface {
 	// ExecutePreparedStmt executes a prepared statement.
 	ExecutePreparedStmt(ctx context.Context, stmtID uint32, param []types.Datum) (sqlexec.RecordSet, error)
 	DropPreparedStmt(stmtID uint32) error
+	// SetPreparedStmtsStatesHandler sets preparedStmtsStatesHandler.
+	SetPreparedStmtsStatesHandler(handler session_states.SessionStatesHandler)
 	SetClientCapability(uint32) // Set client capability flags.
 	SetConnectionID(uint64)
 	SetCommandValue(byte)
@@ -169,9 +171,6 @@ type Session interface {
 	SetDiskFullOpt(level kvrpcpb.DiskFullOpt)
 	GetDiskFullOpt() kvrpcpb.DiskFullOpt
 	ClearDiskFullOpt()
-
-	EncodeSessionStates() ([]byte, error)
-	DecodeSessionStates([]byte) error
 }
 
 var _ Session = (*session)(nil)
@@ -242,6 +241,9 @@ type session struct {
 	}
 	// allowed when tikv disk full happened.
 	diskFullOpt kvrpcpb.DiskFullOpt
+
+	// Used to encode and decode the states of prepared statements
+	preparedStmtsStatesHandler session_states.SessionStatesHandler
 
 	// StmtStats is used to count various indicators of each SQL in this session
 	// at each point in time. These data will be periodically taken away by the
@@ -2656,6 +2658,10 @@ func (s *session) RefreshVars(ctx context.Context) error {
 	return nil
 }
 
+func (s *session) SetPreparedStmtsStatesHandler(handler session_states.SessionStatesHandler) {
+	s.preparedStmtsStatesHandler = handler
+}
+
 // CreateSession4Test creates a new session environment for test.
 func CreateSession4Test(store kv.Storage) (Session, error) {
 	return CreateSession4TestWithOpt(store, nil)
@@ -3443,35 +3449,31 @@ func (s *session) GetStmtStats() *stmtstats.StatementStats {
 	return s.stmtStats
 }
 
-func (s *session) EncodeSessionStates() ([]byte, error) {
+func (s *session) EncodeSessionStates(ctx context.Context, sessionStates *session_states.SessionStates) (err error) {
 	s.txn.mu.Lock()
-	if s.txn.Valid() {
-		s.txn.mu.Unlock()
-		return nil, errors.New("session is in a transaction")
-	}
+	valid := s.txn.Valid()
 	s.txn.mu.Unlock()
+	if valid {
+		return errors.New("session is in a transaction")
+	}
 
-	sessionStates := &session_states.SessionStates{}
-	err := s.sessionVars.EncodeSessionStates(sessionStates)
-	if err != nil {
-		return nil, err
+	if err = s.preparedStmtsStatesHandler.EncodeSessionStates(ctx, sessionStates); err != nil {
+		return
+	}
+	if err = s.sessionVars.EncodeSessionStates(ctx, sessionStates); err != nil {
+		return
 	}
 
 	sessionStates.LockedTables = s.lockedTables
-	result, err := json.Marshal(sessionStates)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-	return result, nil
+	return
 }
 
-func (s *session) DecodeSessionStates(data []byte) error {
-	var sessionStates session_states.SessionStates
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	if err := decoder.Decode(&sessionStates); err != nil {
-		return errors.Trace(err)
+func (s *session) DecodeSessionStates(ctx context.Context, sessionStates *session_states.SessionStates) (err error) {
+	// Decode prepared statements first because it will affect many session states.
+	if err = s.preparedStmtsStatesHandler.DecodeSessionStates(ctx, sessionStates); err != nil {
+		return
 	}
+
 	s.lockedTables = sessionStates.LockedTables
-	return s.sessionVars.DecodeSessionStates(&sessionStates)
+	return s.sessionVars.DecodeSessionStates(ctx, sessionStates)
 }

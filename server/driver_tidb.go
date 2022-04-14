@@ -17,6 +17,9 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
+	"github.com/pingcap/tidb/sessionctx/session_states"
+	"strings"
 	"sync/atomic"
 
 	"github.com/pingcap/errors"
@@ -50,8 +53,7 @@ func NewTiDBDriver(store kv.Storage) *TiDBDriver {
 // TiDBContext implements QueryCtx.
 type TiDBContext struct {
 	session.Session
-	currentDB string
-	stmts     map[int]*TiDBStatement
+	stmts map[int]*TiDBStatement
 }
 
 // TiDBStatement implements PreparedStatement.
@@ -197,21 +199,16 @@ func (qd *TiDBDriver) OpenCtx(connID uint64, capability uint32, collation uint8,
 	se.SetClientCapability(capability)
 	se.SetConnectionID(connID)
 	tc := &TiDBContext{
-		Session:   se,
-		currentDB: dbname,
-		stmts:     make(map[int]*TiDBStatement),
+		Session: se,
+		stmts:   make(map[int]*TiDBStatement),
 	}
+	se.SetPreparedStmtsStatesHandler(tc)
 	return tc, nil
 }
 
 // GetWarnings implements QueryCtx GetWarnings method.
 func (tc *TiDBContext) GetWarnings() []stmtctx.SQLWarn {
 	return tc.GetSessionVars().StmtCtx.GetWarnings()
-}
-
-// CurrentDB implements QueryCtx CurrentDB method.
-func (tc *TiDBContext) CurrentDB() string {
-	return tc.currentDB
 }
 
 // WarningCount implements QueryCtx WarningCount method.
@@ -298,6 +295,67 @@ func (tc *TiDBContext) Prepare(sql string) (statement PreparedStatement, columns
 // GetStmtStats implements the sessionctx.Context interface.
 func (tc *TiDBContext) GetStmtStats() *stmtstats.StatementStats {
 	return tc.Session.GetStmtStats()
+}
+
+// EncodeSessionStates implements SessionStatesHandler EncodeSessionStates interface.
+func (tc *TiDBContext) EncodeSessionStates(ctx context.Context, sessionStates *session_states.SessionStates) error {
+	sessionVars := tc.Session.GetSessionVars()
+	sessionStates.PreparedStmts = make(map[uint32]*session_states.PreparedStmtInfo, len(sessionVars.PreparedStmts))
+	for preparedID, preparedObj := range sessionVars.PreparedStmts {
+		preparedStmt, ok := preparedObj.(*core.CachedPrepareStmt)
+		if !ok {
+			// impossible here
+			return errors.Errorf("invalid CachedPrepareStmt type")
+		}
+		sessionStates.PreparedStmts[preparedID] = &session_states.PreparedStmtInfo{
+			StmtText: preparedStmt.StmtText,
+			StmtDB:   preparedStmt.StmtDB,
+		}
+	}
+	for name, id := range sessionVars.PreparedStmtNameToID {
+		// Binary protocol statements do not have names.
+		if preparedStmtInfo, ok := sessionStates.PreparedStmts[id]; ok {
+			preparedStmtInfo.Name = name
+		}
+	}
+	for id, stmt := range tc.stmts {
+		preparedStmtInfo, ok := sessionStates.PreparedStmts[uint32(id)]
+		if !ok {
+			// impossible here
+			return errors.Errorf("prepared statement %d not found", id)
+		}
+		preparedStmtInfo.ParamTypes = stmt.GetParamsType()
+	}
+	return nil
+}
+
+// DecodeSessionStates implements SessionStatesHandler DecodeSessionStates interface.
+func (tc *TiDBContext) DecodeSessionStates(ctx context.Context, sessionStates *session_states.SessionStates) (err error) {
+	sessionVars := tc.Session.GetSessionVars()
+	for id, preparedStmtInfo := range sessionStates.PreparedStmts {
+		// Set the next id and currentDB manually.
+		sessionVars.SetNextPreparedStmtID(id - 1)
+		sessionVars.CurrentDB = preparedStmtInfo.StmtDB
+		if preparedStmtInfo.Name == "" {
+			// Binary protocol: add to sessionVars.PreparedStmts and TiDBContext.stmts.
+			if _, _, _, err = tc.Prepare(preparedStmtInfo.StmtText); err != nil {
+				return
+			}
+		} else {
+			// Text protocol: add to sessionVars.PreparedStmts and sessionVars.PreparedStmtNameToID.
+			stmtText := strings.ReplaceAll(preparedStmtInfo.StmtText, "\\", "\\\\")
+			stmtText = strings.ReplaceAll(stmtText, "'", "\\'")
+			sql := fmt.Sprintf("prepare %s from '%s'", preparedStmtInfo.Name, stmtText)
+			stmts, err := tc.Parse(ctx, sql)
+			if err != nil {
+				return err
+			}
+			if _, err = tc.ExecuteStmt(ctx, stmts[0]); err != nil {
+				return err
+			}
+		}
+	}
+	return
 }
 
 type tidbResultSet struct {

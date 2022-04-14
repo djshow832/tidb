@@ -15,7 +15,9 @@
 package executor
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -41,6 +43,7 @@ import (
 	"github.com/pingcap/tidb/plugin"
 	"github.com/pingcap/tidb/privilege"
 	"github.com/pingcap/tidb/sessionctx"
+	"github.com/pingcap/tidb/sessionctx/session_states"
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util"
@@ -146,7 +149,7 @@ func (e *SimpleExec) Next(ctx context.Context, req *chunk.Chunk) (err error) {
 	case *ast.SetPwdStmt:
 		err = e.executeSetPwd(ctx, x)
 	case *ast.SetSessionStatesStmt:
-		err = e.executeSetSessionStates(x)
+		err = e.executeSetSessionStates(ctx, x)
 	case *ast.KillStmt:
 		err = e.executeKillStmt(ctx, x)
 	case *ast.BinlogStmt:
@@ -1657,8 +1660,14 @@ func asyncDelayShutdown(p *os.Process, delay time.Duration) {
 	}
 }
 
-func (e *SimpleExec) executeSetSessionStates(s *ast.SetSessionStatesStmt) error {
-	return e.ctx.DecodeSessionStates([]byte(s.SessionStates))
+func (e *SimpleExec) executeSetSessionStates(ctx context.Context, s *ast.SetSessionStatesStmt) error {
+	var sessionStates session_states.SessionStates
+	decoder := json.NewDecoder(bytes.NewReader([]byte(s.SessionStates)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&sessionStates); err != nil {
+		return errors.Trace(err)
+	}
+	return e.ctx.DecodeSessionStates(ctx, &sessionStates)
 }
 
 func (e *SimpleExec) executeAdmin(s *ast.AdminStmt) error {

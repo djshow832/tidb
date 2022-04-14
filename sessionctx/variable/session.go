@@ -16,6 +16,7 @@ package variable
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
@@ -1531,6 +1532,11 @@ func (s *SessionVars) GetNextPreparedStmtID() uint32 {
 	return s.preparedStmtID
 }
 
+// SetNextPreparedStmtID sets the next prepared statement id. It's only used in restoring session states.
+func (s *SessionVars) SetNextPreparedStmtID(preparedStmtID uint32) {
+	s.preparedStmtID = preparedStmtID
+}
+
 // Location returns the value of time_zone session variable. If it is nil, then return time.Local.
 func (s *SessionVars) Location() *time.Location {
 	loc := s.TimeZone
@@ -1685,7 +1691,7 @@ func (s *SessionVars) GetTemporaryTable(tblInfo *model.TableInfo) tableutil.Temp
 }
 
 // EncodeSessionStates saves session states into SessionStates.
-func (s *SessionVars) EncodeSessionStates(sessionStates *session_states.SessionStates) error {
+func (s *SessionVars) EncodeSessionStates(ctx context.Context, sessionStates *session_states.SessionStates) error {
 	// Encode user-defined variables.
 	var err error
 	func() {
@@ -1742,11 +1748,13 @@ func (s *SessionVars) EncodeSessionStates(sessionStates *session_states.SessionS
 			sessionStates.SystemVars[sv.Name] = val
 		}
 	}
+
+	sessionStates.PreparedStmtID = s.preparedStmtID
 	return nil
 }
 
 // DecodeSessionStates restore session states from SessionStates.
-func (s *SessionVars) DecodeSessionStates(sessionStates *session_states.SessionStates) error {
+func (s *SessionVars) DecodeSessionStates(ctx context.Context, sessionStates *session_states.SessionStates) error {
 	var err error
 	func() {
 		s.UsersLock.Lock()
@@ -1765,6 +1773,8 @@ func (s *SessionVars) DecodeSessionStates(sessionStates *session_states.SessionS
 			return err
 		}
 	}
+
+	s.preparedStmtID = sessionStates.PreparedStmtID
 	return nil
 }
 

@@ -1,12 +1,20 @@
 package session_states
 
 import (
+	"context"
 	"time"
 
 	"github.com/pingcap/tidb/parser/model"
 	ptypes "github.com/pingcap/tidb/parser/types"
 	"github.com/pingcap/tidb/types"
 )
+
+type PreparedStmtInfo struct {
+	Name       string `json:"name,omitempty"`
+	StmtText   string `json:"text"`
+	StmtDB     string `json:"db,omitempty"`
+	ParamTypes []byte `json:"types,omitempty"`
+}
 
 type TxnIsolationLevelOneShot struct {
 	State uint   `json:"state"`
@@ -16,26 +24,33 @@ type TxnIsolationLevelOneShot struct {
 type SQLWarn struct {
 	Level   string `json:"level"`
 	Code    uint16 `json:"code"`
-	Message string `json:"message"`
+	Message string `json:"msg"`
+}
+
+type SessionStatesHandler interface {
+	// EncodeSessionStates encodes session states into a JSON.
+	EncodeSessionStates(context.Context, *SessionStates) error
+	// DecodeSessionStates decodes a map into session states.
+	DecodeSessionStates(context.Context, *SessionStates) error
 }
 
 type SessionStates struct {
-	LockedTables         map[int64]model.TableLockTpInfo `json:"locked-tables,omitempty"`
-	UserVars             map[string]types.DatumJSON      `json:"user-vars,omitempty"`
-	UserVarTypes         map[string]*ptypes.FieldType    `json:"user-var-types,omitempty"`
-	SystemVars           map[string]string               `json:"system-vars,omitempty"`
-	PreparedStmts        map[uint32]interface{}          `json:"prepared-stmts,omitempty"`
-	PreparedStmtNameToID map[string]uint32               `json:"prepared-stmt-names,omitempty"`
-	PreparedStmtID       uint32                          `json:"prepared-stmt-id,omitempty"`
-	TxnIsolationLevel    *TxnIsolationLevelOneShot       `json:"txn_iso_level,omitempty"`
-	Status               uint16                          `json:"status,omitempty"`
-	CurrentDB            string                          `json:"current-db,omitempty"`
-	LastFoundRows        uint64                          `json:"last-found-rows,omitempty"`
-	LastInsertID         uint64                          `json:"last-insert-id,omitempty"`
-	PrevAffectedRows     int64                           `json:"affected-rows,omitempty"`
-	SequenceLatestValues map[int64]int64                 `json:"sequence-values,omitempty"`
-	MPPStoreLastFailTime map[string]time.Time            `json:"store-last-fail,omitempty"`
-	Warnings             []SQLWarn                       `json:"warnings,omitempty"`
+	LockedTables map[int64]model.TableLockTpInfo `json:"locked-tables,omitempty"`
+	// TODO: advisoryLocks
+	UserVars             map[string]types.DatumJSON   `json:"user-vars,omitempty"`
+	UserVarTypes         map[string]*ptypes.FieldType `json:"user-var-types,omitempty"`
+	SystemVars           map[string]string            `json:"system-vars,omitempty"`
+	PreparedStmts        map[uint32]*PreparedStmtInfo `json:"prepared-stmts,omitempty"`
+	PreparedStmtID       uint32                       `json:"prepared-stmt-id,omitempty"`
+	TxnIsolationLevel    *TxnIsolationLevelOneShot    `json:"txn_iso_level,omitempty"`
+	Status               uint16                       `json:"status,omitempty"`
+	CurrentDB            string                       `json:"current-db,omitempty"`
+	LastFoundRows        uint64                       `json:"last-found-rows,omitempty"`
+	LastInsertID         uint64                       `json:"last-insert-id,omitempty"`
+	PrevAffectedRows     int64                        `json:"affected-rows,omitempty"`
+	SequenceLatestValues map[int64]int64              `json:"sequence-values,omitempty"`
+	MPPStoreLastFailTime map[string]time.Time         `json:"store-last-fail,omitempty"`
+	Warnings             []SQLWarn                    `json:"warnings,omitempty"`
 }
 
 func (ss *SessionStates) DecodeUserVars() (map[string]types.Datum, error) {

@@ -27,6 +27,7 @@ import (
 	"github.com/pingcap/tidb/parser/ast"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/sessionctx"
+	"github.com/pingcap/tidb/sessionctx/session_states"
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/disk"
@@ -109,12 +110,12 @@ func (c *Context) ShowProcess() *util.ProcessInfo {
 }
 
 // EncodeSessionStates implements sessionctx.Context EncodeSessionStates interface.
-func (c *Context) EncodeSessionStates() ([]byte, error) {
-	return nil, errors.Errorf("Not Supported")
+func (c *Context) EncodeSessionStates(context.Context, *session_states.SessionStates) error {
+	return errors.Errorf("Not Supported")
 }
 
 // DecodeSessionStates implements sessionctx.Context DecodeSessionStates interface.
-func (c *Context) DecodeSessionStates([]byte) error {
+func (c *Context) DecodeSessionStates(context.Context, *session_states.SessionStates) error {
 	return errors.Errorf("Not Supported")
 }
 
