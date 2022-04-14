@@ -46,6 +46,7 @@ import (
 	"github.com/pingcap/tidb/privilege"
 	"github.com/pingcap/tidb/privilege/privileges"
 	"github.com/pingcap/tidb/sessionctx"
+	"github.com/pingcap/tidb/sessionctx/session_states"
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/store/helper"
@@ -234,7 +235,7 @@ func (e *ShowExec) fetchAll(ctx context.Context) error {
 	case ast.ShowPlacementForPartition:
 		return e.fetchShowPlacementForPartition(ctx)
 	case ast.ShowSessionStates:
-		return e.fetchShowSessionStates()
+		return e.fetchShowSessionStates(ctx)
 	}
 	return nil
 }
@@ -1893,14 +1894,18 @@ func (e *ShowExec) fetchShowBuiltins() error {
 	return nil
 }
 
-func (e *ShowExec) fetchShowSessionStates() error {
-	data, err := e.ctx.EncodeSessionStates()
+func (e *ShowExec) fetchShowSessionStates(ctx context.Context) error {
+	sessionStates := &session_states.SessionStates{}
+	err := e.ctx.EncodeSessionStates(ctx, sessionStates)
 	if err != nil {
 		return err
 	}
-	valuesJSON := json.BinaryJSON{}
-	err = valuesJSON.UnmarshalJSON(data)
+	data, err := gjson.Marshal(sessionStates)
 	if err != nil {
+		return errors.Trace(err)
+	}
+	valuesJSON := json.BinaryJSON{}
+	if err = valuesJSON.UnmarshalJSON(data); err != nil {
 		return err
 	}
 	e.appendRow([]interface{}{valuesJSON})

@@ -92,6 +92,7 @@ func CreateMockConn(t *testing.T, store kv.Storage, server *Server) MockConn {
 		Session: se,
 		stmts:   make(map[int]*TiDBStatement),
 	}
+	se.SetPreparedStmtsStatesHandler(tc)
 
 	cc := &clientConn{
 		server:     server,

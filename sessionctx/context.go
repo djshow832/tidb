@@ -24,6 +24,7 @@ import (
 	"github.com/pingcap/tidb/metrics"
 	"github.com/pingcap/tidb/owner"
 	"github.com/pingcap/tidb/parser/model"
+	"github.com/pingcap/tidb/sessionctx/session_states"
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/kvcache"
@@ -43,6 +44,7 @@ type InfoschemaMetaVersion interface {
 
 // Context is an interface for transaction and executive args environment.
 type Context interface {
+	session_states.SessionStatesHandler
 	// NewTxn creates a new transaction for further execution.
 	// If old transaction is valid, it is committed first.
 	// It's used in BEGIN statement and DDL statements to commit old transaction.
@@ -148,10 +150,6 @@ type Context interface {
 	GetStmtStats() *stmtstats.StatementStats
 	// ShowProcess returns ProcessInfo running in current Context
 	ShowProcess() *util.ProcessInfo
-	// EncodeSessionStates encodes session states into a JSON.
-	EncodeSessionStates() ([]byte, error)
-	// DecodeSessionStates decodes a map into session states.
-	DecodeSessionStates([]byte) error
 }
 
 type basicCtxType int
