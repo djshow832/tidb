@@ -180,6 +180,8 @@ var defaultSysVars = []*SysVar{
 	}},
 	{Scope: ScopeSession, Name: TxnIsolationOneShot, Value: "", skipInit: true, Validation: func(vars *SessionVars, normalizedValue string, originalValue string, scope ScopeFlag) (string, error) {
 		return checkIsolationLevel(vars, normalizedValue, originalValue, scope)
+	}, GetSession: func(s *SessionVars) (string, error) {
+		return s.txnIsolationLevelOneShot.value, nil
 	}, SetSession: func(s *SessionVars, val string) error {
 		s.txnIsolationLevelOneShot.state = oneShotSet
 		s.txnIsolationLevelOneShot.value = val

@@ -15,6 +15,9 @@
 package stmtctx
 
 import (
+	"encoding/json"
+	"github.com/pingcap/errors"
+	"github.com/pingcap/tidb/parser/terror"
 	"math"
 	"sort"
 	"strconv"
@@ -58,6 +61,43 @@ func AllocateTaskID() uint64 {
 type SQLWarn struct {
 	Level string
 	Err   error
+}
+
+type jsonSQLWarn struct {
+	Level  string        `json:"level"`
+	SQLErr *terror.Error `json:"err,omitempty"`
+	Msg    string        `json:"msg,omitempty"`
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (warn *SQLWarn) MarshalJSON() ([]byte, error) {
+	w := &jsonSQLWarn{
+		Level: warn.Level,
+	}
+	e := errors.Cause(warn.Err)
+	switch x := e.(type) {
+	case *terror.Error:
+		// Omit outside errors because only the most inside error matters.
+		w.SQLErr = x
+	default:
+		w.Msg = e.Error()
+	}
+	return json.Marshal(w)
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (warn *SQLWarn) UnmarshalJSON(data []byte) error {
+	var w jsonSQLWarn
+	if err := json.Unmarshal(data, &w); err != nil {
+		return err
+	}
+	warn.Level = w.Level
+	if w.SQLErr != nil {
+		warn.Err = w.SQLErr
+	} else {
+		warn.Err = errors.New(w.Msg)
+	}
+	return nil
 }
 
 // StatementContext contains variables for a statement.
@@ -134,6 +174,8 @@ type StatementContext struct {
 	}
 	// PrevAffectedRows is the affected-rows value(DDL is 0, DML is the number of affected rows).
 	PrevAffectedRows int64
+	// AffectedRowsSetInForce is the affected rows set in a `set session_states` statement.
+	AffectedRowsSetInForce int64
 	// PrevLastInsertID is the last insert ID of previous statement.
 	PrevLastInsertID uint64
 	// LastInsertID is the auto-generated ID in the current statement.
@@ -398,6 +440,13 @@ func (sc *StatementContext) AddAffectedRows(rows uint64) {
 	sc.mu.affectedRows += rows
 }
 
+// SetAffectedRows sets affected rows.
+func (sc *StatementContext) SetAffectedRows(rows uint64) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	sc.mu.affectedRows = rows
+}
+
 // AffectedRows gets affected rows.
 func (sc *StatementContext) AffectedRows() uint64 {
 	sc.mu.Lock()
@@ -550,6 +599,7 @@ func (sc *StatementContext) SetWarnings(warns []SQLWarn) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 	sc.mu.warnings = warns
+	sc.mu.errorCount = 0
 	for _, w := range warns {
 		if w.Level == WarnLevelError {
 			sc.mu.errorCount++

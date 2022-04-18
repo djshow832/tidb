@@ -6,6 +6,7 @@ import (
 
 	"github.com/pingcap/tidb/parser/model"
 	ptypes "github.com/pingcap/tidb/parser/types"
+	"github.com/pingcap/tidb/sessionctx/stmtctx"
 	"github.com/pingcap/tidb/types"
 )
 
@@ -16,15 +17,18 @@ type PreparedStmtInfo struct {
 	ParamTypes []byte `json:"types,omitempty"`
 }
 
-type TxnIsolationLevelOneShot struct {
-	State uint   `json:"state"`
-	Value string `json:"value"`
+// QueryInfo represents the information of last executed query. It's used to expose information for test purpose.
+type QueryInfo struct {
+	TxnScope    string `json:"txn_scope"`
+	StartTS     uint64 `json:"start_ts"`
+	ForUpdateTS uint64 `json:"for_update_ts"`
+	ErrMsg      string `json:"error,omitempty"`
 }
 
-type SQLWarn struct {
-	Level   string `json:"level"`
-	Code    uint16 `json:"code"`
-	Message string `json:"msg"`
+// LastDDLInfo represents the information of last DDL. It's used to expose information for test purpose.
+type LastDDLInfo struct {
+	Query  string `json:"query"`
+	SeqNum uint64 `json:"seq_num"`
 }
 
 type SessionStatesHandler interface {
@@ -37,57 +41,22 @@ type SessionStatesHandler interface {
 type SessionStates struct {
 	LockedTables map[int64]model.TableLockTpInfo `json:"locked-tables,omitempty"`
 	// TODO: advisoryLocks
-	UserVars             map[string]types.DatumJSON   `json:"user-vars,omitempty"`
+	UserVars             map[string]types.Datum       `json:"user-var-values,omitempty"`
 	UserVarTypes         map[string]*ptypes.FieldType `json:"user-var-types,omitempty"`
-	SystemVars           map[string]string            `json:"system-vars,omitempty"`
+	SystemVars           map[string]string            `json:"sys-vars,omitempty"`
 	PreparedStmts        map[uint32]*PreparedStmtInfo `json:"prepared-stmts,omitempty"`
 	PreparedStmtID       uint32                       `json:"prepared-stmt-id,omitempty"`
-	TxnIsolationLevel    *TxnIsolationLevelOneShot    `json:"txn_iso_level,omitempty"`
 	Status               uint16                       `json:"status,omitempty"`
 	CurrentDB            string                       `json:"current-db,omitempty"`
-	LastFoundRows        uint64                       `json:"last-found-rows,omitempty"`
+	LastTxnInfo          string                       `json:"txn-info,omitempty"`
+	LastQueryInfo        *QueryInfo                   `json:"query-info,omitempty"`
+	LastDDLInfo          *LastDDLInfo                 `json:"ddl-info,omitempty"`
+	LastFoundRows        uint64                       `json:"found-rows,omitempty"`
 	LastInsertID         uint64                       `json:"last-insert-id,omitempty"`
-	PrevAffectedRows     int64                        `json:"affected-rows,omitempty"`
-	SequenceLatestValues map[int64]int64              `json:"sequence-values,omitempty"`
-	MPPStoreLastFailTime map[string]time.Time         `json:"store-last-fail,omitempty"`
-	Warnings             []SQLWarn                    `json:"warnings,omitempty"`
-}
-
-func (ss *SessionStates) DecodeUserVars() (map[string]types.Datum, error) {
-	result := make(map[string]types.Datum, len(ss.UserVars))
-	for name, datumJson := range ss.UserVars {
-		datum, err := types.DatumJSONToDatum(&datumJson)
-		if err != nil {
-			return nil, err
-		}
-		result[name] = *datum
-	}
-	return result, nil
-}
-
-func (ss *SessionStates) EncodeUserVars(userVars map[string]types.Datum) error {
-	ss.UserVars = make(map[string]types.DatumJSON, len(userVars))
-	for name, datum := range userVars {
-		datumJson, err := types.DatumToDatumJSON(&datum)
-		if err != nil {
-			return err
-		}
-		ss.UserVars[name] = *datumJson
-	}
-	return nil
-}
-
-func (ss *SessionStates) DecodeUserVarFields() map[string]*ptypes.FieldType {
-	result := make(map[string]*ptypes.FieldType, len(ss.UserVarTypes))
-	for name, userVar := range ss.UserVarTypes {
-		result[name] = userVar.Clone()
-	}
-	return result
-}
-
-func (ss *SessionStates) EncodeUserVarFields(userVarFields map[string]*ptypes.FieldType) {
-	ss.UserVarTypes = make(map[string]*ptypes.FieldType, len(userVarFields))
-	for name, userVar := range userVarFields {
-		ss.UserVarTypes[name] = userVar.Clone()
-	}
+	LastAffectedRows     int64                        `json:"affected-rows,omitempty"`
+	FoundInPlanCache     bool                         `json:"in-plan-cache,omitempty"`
+	FoundInBinding       bool                         `json:"in-binding,omitempty"`
+	SequenceLatestValues map[int64]int64              `json:"seq-values,omitempty"`
+	MPPStoreLastFailTime map[string]time.Time         `json:"store-fail-time,omitempty"`
+	Warnings             []stmtctx.SQLWarn            `json:"warnings,omitempty"`
 }
