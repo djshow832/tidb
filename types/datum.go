@@ -15,6 +15,7 @@
 package types
 
 import (
+	gjson "encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -1998,6 +1999,77 @@ func (d *Datum) ToMysqlJSON() (j json.BinaryJSON, err error) {
 	return
 }
 
+type jsonDatum struct {
+	K         byte      `json:"k"`
+	Decimal   uint16    `json:"decimal,omitempty"`
+	Length    uint32    `json:"length,omitempty"`
+	I         int64     `json:"i,omitempty"`
+	Collation string    `json:"collation,omitempty"`
+	B         []byte    `json:"b,omitempty"`
+	Duration  *Duration `json:"d,omitempty"`
+	U         uint64    `json:"u,omitempty"`
+	F         float64   `json:"f,omitempty"`
+}
+
+func (d *Datum) MarshalJSON() ([]byte, error) {
+	jd := &jsonDatum{
+		K:         d.k,
+		Decimal:   d.decimal,
+		Length:    d.length,
+		I:         d.i,
+		Collation: d.collation,
+		B:         d.b,
+	}
+	var err error
+	switch d.k {
+	case KindMysqlTime:
+		jd.U, err = d.GetMysqlTime().ToPackedUint()
+	case KindMysqlDecimal:
+		jd.F, err = d.GetMysqlDecimal().ToFloat64()
+	case KindMysqlDuration:
+		d := d.GetMysqlDuration()
+		jd.Duration = &d
+	default:
+		if d.x != nil {
+			return nil, errors.New(fmt.Sprintf("unsupported type: %d", d.k))
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return gjson.Marshal(jd)
+}
+
+func (d *Datum) UnmarshalJSON(data []byte) error {
+	var jd jsonDatum
+	var err error
+	if err = gjson.Unmarshal(data, &jd); err != nil {
+		return err
+	}
+	d.k = jd.K
+	d.decimal = jd.Decimal
+	d.length = jd.Length
+	d.i = jd.I
+	d.collation = jd.Collation
+	d.b = jd.B
+
+	switch jd.K {
+	case KindMysqlTime:
+		var t Time
+		if err = t.FromPackedUint(jd.U); err == nil {
+			d.SetMysqlTime(t)
+		}
+	case KindMysqlDecimal:
+		var dec MyDecimal
+		if err = dec.FromFloat64(jd.F); err == nil {
+			d.SetMysqlDecimal(&dec)
+		}
+	case KindMysqlDuration:
+		d.SetMysqlDuration(*jd.Duration)
+	}
+	return err
+}
+
 func invalidConv(d *Datum, tp byte) (Datum, error) {
 	return Datum{}, errors.Errorf("cannot convert datum from %s to type %s", KindStr(d.Kind()), TypeStr(tp))
 }
@@ -2415,69 +2487,4 @@ func EstimatedMemUsage(array []Datum, numOfRows int) int64 {
 	}
 	bytesConsumed += len(array) * sizeOfEmptyDatum
 	return int64(bytesConsumed * numOfRows)
-}
-
-type DatumJSON struct {
-	K         byte      `json:"k"`
-	Decimal   uint16    `json:"decimal,omitempty"`
-	Length    uint32    `json:"length,omitempty"`
-	I         int64     `json:"i,omitempty"`
-	Collation string    `json:"collation,omitempty"`
-	B         []byte    `json:"b,omitempty"`
-	Duration  *Duration `json:"d,omitempty"`
-	U         uint64    `json:"u,omitempty"`
-	F         float64   `json:"f,omitempty"`
-}
-
-func DatumToDatumJSON(datum *Datum) (*DatumJSON, error) {
-	datumJson := &DatumJSON{
-		K:         datum.k,
-		Decimal:   datum.decimal,
-		Length:    datum.length,
-		I:         datum.i,
-		Collation: datum.collation,
-		B:         datum.b,
-	}
-	var err error
-	switch datum.k {
-	case KindMysqlTime:
-		datumJson.U, err = datum.GetMysqlTime().ToPackedUint()
-	case KindMysqlDecimal:
-		datumJson.F, err = datum.GetMysqlDecimal().ToFloat64()
-	case KindMysqlDuration:
-		d := datum.GetMysqlDuration()
-		datumJson.Duration = &d
-	default:
-		if datum.x != nil {
-			return nil, errors.New(fmt.Sprintf("unsupported type: %d", datum.k))
-		}
-	}
-	return datumJson, err
-}
-
-func DatumJSONToDatum(datumJson *DatumJSON) (*Datum, error) {
-	datum := &Datum{
-		k:         datumJson.K,
-		decimal:   datumJson.Decimal,
-		length:    datumJson.Length,
-		i:         datumJson.I,
-		collation: datumJson.Collation,
-		b:         datumJson.B,
-	}
-	var err error
-	switch datumJson.K {
-	case KindMysqlTime:
-		var t Time
-		if err = t.FromPackedUint(datumJson.U); err == nil {
-			datum.SetMysqlTime(t)
-		}
-	case KindMysqlDecimal:
-		var d MyDecimal
-		if err = d.FromFloat64(datumJson.F); err == nil {
-			datum.SetMysqlDecimal(&d)
-		}
-	case KindMysqlDuration:
-		datum.SetMysqlDuration(*datumJson.Duration)
-	}
-	return datum, err
 }

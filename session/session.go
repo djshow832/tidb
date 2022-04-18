@@ -2003,7 +2003,7 @@ func runStmt(ctx context.Context, se *session, s sqlexec.Statement) (rs sqlexec.
 	// Record diagnostic information for DML statements
 	if _, ok := s.(*executor.ExecStmt).StmtNode.(ast.DMLNode); ok {
 		defer func() {
-			sessVars.LastQueryInfo = variable.QueryInfo{
+			sessVars.LastQueryInfo = session_states.QueryInfo{
 				TxnScope:    sessVars.CheckAndGetTxnScope(),
 				StartTS:     sessVars.TxnCtx.StartTS,
 				ForUpdateTS: sessVars.TxnCtx.GetForUpdateTS(),
@@ -3455,6 +3455,14 @@ func (s *session) EncodeSessionStates(ctx context.Context, sessionStates *sessio
 	s.txn.mu.Unlock()
 	if valid {
 		return errors.New("session is in a transaction")
+	}
+
+	// Check temporary tables here to avoid circle dependency.
+	if s.sessionVars.LocalTemporaryTables != nil {
+		localTempTables := s.sessionVars.LocalTemporaryTables.(*infoschema.LocalTemporaryTables)
+		if localTempTables.Count() > 0 {
+			return errors.New("session has local temporary tables")
+		}
 	}
 
 	if err = s.preparedStmtsStatesHandler.EncodeSessionStates(ctx, sessionStates); err != nil {

@@ -535,6 +535,10 @@ func (is *LocalTemporaryTables) RemoveTable(schema, table model.CIStr) (exist bo
 	return true
 }
 
+func (is *LocalTemporaryTables) Count() int {
+	return len(is.idx2table)
+}
+
 // SchemaByTable get a table's schema name
 func (is *LocalTemporaryTables) SchemaByTable(tableInfo *model.TableInfo) (*model.DBInfo, bool) {
 	if tableInfo == nil {
