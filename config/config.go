@@ -408,6 +408,8 @@ type Security struct {
 	ClusterSSLCert         string   `toml:"cluster-ssl-cert" json:"cluster-ssl-cert"`
 	ClusterSSLKey          string   `toml:"cluster-ssl-key" json:"cluster-ssl-key"`
 	ClusterVerifyCN        []string `toml:"cluster-verify-cn" json:"cluster-verify-cn"`
+	SigningCert            string   `toml:"sign-cert" json:"sign-cert"`
+	SigningKey             string   `toml:"sign-key" json:"sign-key"`
 	// If set to "plaintext", the spilled files will not be encrypted.
 	SpilledFileEncryptionMethod string `toml:"spilled-file-encryption-method" json:"spilled-file-encryption-method"`
 	// EnableSEM prevents SUPER users from having full access.

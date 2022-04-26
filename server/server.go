@@ -58,6 +58,7 @@ import (
 	"github.com/pingcap/tidb/parser/terror"
 	"github.com/pingcap/tidb/plugin"
 	"github.com/pingcap/tidb/session/txninfo"
+	"github.com/pingcap/tidb/sessionctx/session_states"
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/dbterror"
@@ -231,6 +232,10 @@ func NewServer(cfg *config.Config, driver IDriver) (*Server, error) {
 
 	if s.tlsConfig != nil {
 		s.capability |= mysql.ClientSSL
+	}
+
+	if err = session_states.InitSigningCert(s.cfg.Security.SigningCert, s.cfg.Security.SigningKey); err != nil {
+		logutil.BgLogger().Error("signing cert/key load fail", zap.Error(err))
 	}
 
 	if s.cfg.Host != "" && (s.cfg.Port != 0 || RunInGoTest) {

@@ -1900,15 +1900,27 @@ func (e *ShowExec) fetchShowSessionStates(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	data, err := gjson.Marshal(sessionStates)
+	stateBytes, err := gjson.Marshal(sessionStates)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	valuesJSON := json.BinaryJSON{}
-	if err = valuesJSON.UnmarshalJSON(data); err != nil {
+	stateJSON := json.BinaryJSON{}
+	if err = stateJSON.UnmarshalJSON(stateBytes); err != nil {
 		return err
 	}
-	e.appendRow([]interface{}{valuesJSON})
+	token, err := session_states.CreateSessionToken(e.ctx.GetSessionVars().User.Username)
+	if err != nil {
+		return err
+	}
+	tokenBytes, err := gjson.Marshal(token)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	tokenJSON := json.BinaryJSON{}
+	if err = tokenJSON.UnmarshalJSON(tokenBytes); err != nil {
+		return err
+	}
+	e.appendRow([]interface{}{stateJSON, tokenJSON})
 	return nil
 }
 
