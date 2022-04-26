@@ -33,6 +33,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"github.com/pingcap/tidb/sessionctx/session_states"
 	"io"
 	"math/rand"
 	"net"
@@ -231,6 +232,10 @@ func NewServer(cfg *config.Config, driver IDriver) (*Server, error) {
 
 	if s.tlsConfig != nil {
 		s.capability |= mysql.ClientSSL
+	}
+
+	if err = session_states.InitSigningCert(s.cfg.Security.SigningCert, s.cfg.Security.SigningKey); err != nil {
+		logutil.BgLogger().Error("signing cert/key load fail", zap.Error(err))
 	}
 
 	if s.cfg.Host != "" && (s.cfg.Port != 0 || RunInGoTest) {

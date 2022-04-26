@@ -75,6 +75,7 @@ import (
 	"github.com/pingcap/tidb/privilege"
 	"github.com/pingcap/tidb/session"
 	"github.com/pingcap/tidb/sessionctx"
+	"github.com/pingcap/tidb/sessionctx/session_states"
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
 	"github.com/pingcap/tidb/sessionctx/variable"
 	storeerr "github.com/pingcap/tidb/store/driver/error"
@@ -702,6 +703,7 @@ func (cc *clientConn) readOptionalSSLRequestAndHandshakeResponse(ctx context.Con
 		}
 	case mysql.AuthNativePassword:
 	case mysql.AuthSocket:
+	case mysql.AuthTiDBSessionToken:
 	default:
 		return errors.New("Unknown auth plugin")
 	}
@@ -829,7 +831,16 @@ func (cc *clientConn) openSessionAndDoAuth(authData []byte, authPlugin string) e
 		return errAccessDeniedNoPassword.FastGenByArgs(cc.user, host)
 	}
 
-	if !cc.ctx.Auth(&auth.UserIdentity{Username: cc.user, Hostname: host}, authData, cc.salt) {
+	userIdentity := &auth.UserIdentity{Username: cc.user, Hostname: host}
+	if authPlugin == mysql.AuthTiDBSessionToken {
+		if !cc.ctx.AuthWithoutVerification(userIdentity) {
+			return errAccessDenied.FastGenByArgs(cc.user, host, hasPassword)
+		}
+		if err = session_states.ValidateSessionToken(authData, cc.user); err != nil {
+			logutil.BgLogger().Warn("verify session token failed", zap.Error(err))
+			return errAccessDenied.FastGenByArgs(cc.user, host, hasPassword)
+		}
+	} else if !cc.ctx.Auth(userIdentity, authData, cc.salt) {
 		return errAccessDenied.FastGenByArgs(cc.user, host, hasPassword)
 	}
 	cc.ctx.SetPort(port)
@@ -854,6 +865,11 @@ func (cc *clientConn) checkAuthPlugin(ctx context.Context, resp *handshakeRespon
 	}
 
 	authData := resp.Auth
+	// tidb_session_token is always permitted and skips stored user plugin.
+	if resp.AuthPlugin == mysql.AuthTiDBSessionToken {
+		return authData, nil
+	}
+
 	hasPassword := "YES"
 	if len(authData) == 0 {
 		hasPassword = "NO"

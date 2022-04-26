@@ -2631,7 +2631,7 @@ func (s *session) MatchIdentity(username, remoteHost string) (*auth.UserIdentity
 	return nil, fmt.Errorf("could not find matching user in MatchIdentity: %s, %s", username, remoteHost)
 }
 
-// AuthWithoutVerification is required by the ResetConnection RPC
+// AuthWithoutVerification is required by the ResetConnection RPC and tidb_session_token auth-plugin.
 func (s *session) AuthWithoutVerification(user *auth.UserIdentity) bool {
 	pm := privilege.GetPrivilegeManager(s)
 	authUser, err := s.MatchIdentity(user.Username, user.Hostname)
