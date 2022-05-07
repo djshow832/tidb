@@ -730,6 +730,7 @@ func (cc *clientConn) handleAuthPlugin(ctx context.Context, resp *handshakeRespo
 		case mysql.AuthCachingSha2Password:
 		case mysql.AuthNativePassword:
 		case mysql.AuthSocket:
+		case mysql.AuthTiDBSessionToken:
 		default:
 			logutil.Logger(ctx).Warn("Unknown Auth Plugin", zap.String("plugin", resp.AuthPlugin))
 		}
