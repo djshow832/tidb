@@ -338,9 +338,12 @@ func (tc *TiDBContext) DecodeSessionStates(ctx context.Context, sessionStates *s
 		sessionVars.CurrentDB = preparedStmtInfo.StmtDB
 		if preparedStmtInfo.Name == "" {
 			// Binary protocol: add to sessionVars.PreparedStmts and TiDBContext.stmts.
-			if _, _, _, err = tc.Prepare(preparedStmtInfo.StmtText); err != nil {
+			var stmt PreparedStatement
+			if stmt, _, _, err = tc.Prepare(preparedStmtInfo.StmtText); err != nil {
 				return
 			}
+			// Only binary protocol uses paramsType, which is passed from the first COM_STMT_EXECUTE.
+			stmt.SetParamsType(preparedStmtInfo.ParamTypes)
 		} else {
 			// Text protocol: add to sessionVars.PreparedStmts and sessionVars.PreparedStmtNameToID.
 			stmtText := strings.ReplaceAll(preparedStmtInfo.StmtText, "\\", "\\\\")
