@@ -41,7 +41,7 @@ type SessionStatesHandler interface {
 type SessionStates struct {
 	LockedTables map[int64]model.TableLockTpInfo `json:"locked-tables,omitempty"`
 	// TODO: advisoryLocks
-	UserVars             map[string]types.Datum       `json:"user-var-values,omitempty"`
+	UserVars             map[string]*types.Datum      `json:"user-var-values,omitempty"`
 	UserVarTypes         map[string]*ptypes.FieldType `json:"user-var-types,omitempty"`
 	SystemVars           map[string]string            `json:"sys-vars,omitempty"`
 	PreparedStmts        map[uint32]*PreparedStmtInfo `json:"prepared-stmts,omitempty"`
