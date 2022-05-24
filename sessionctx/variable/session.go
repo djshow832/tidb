@@ -1697,9 +1697,9 @@ func (s *SessionVars) EncodeSessionStates(ctx context.Context, sessionStates *se
 	func() {
 		s.UsersLock.RLock()
 		defer s.UsersLock.RUnlock()
-		sessionStates.UserVars = make(map[string]types.Datum, len(s.Users))
+		sessionStates.UserVars = make(map[string]*types.Datum, len(s.Users))
 		for name, userVar := range s.Users {
-			sessionStates.UserVars[name] = userVar
+			sessionStates.UserVars[name] = &userVar
 		}
 		sessionStates.UserVarTypes = make(map[string]*ptypes.FieldType, len(s.UserVarTypes))
 		for name, userVarType := range s.UserVarTypes {
@@ -1783,7 +1783,7 @@ func (s *SessionVars) DecodeSessionStates(ctx context.Context, sessionStates *se
 		defer s.UsersLock.Unlock()
 		s.Users = make(map[string]types.Datum, len(sessionStates.UserVars))
 		for name, userVar := range sessionStates.UserVars {
-			s.Users[name] = userVar
+			s.Users[name] = *userVar
 		}
 		s.UserVarTypes = make(map[string]*ptypes.FieldType, len(sessionStates.UserVarTypes))
 		for name, userVarType := range sessionStates.UserVarTypes {
