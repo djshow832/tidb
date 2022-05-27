@@ -42,9 +42,16 @@ type InfoschemaMetaVersion interface {
 	SchemaMetaVersion() int64
 }
 
+type SessionStatesHandler interface {
+	// EncodeSessionStates encodes session states into a JSON.
+	EncodeSessionStates(context.Context, Context, *session_states.SessionStates) error
+	// DecodeSessionStates decodes a map into session states.
+	DecodeSessionStates(context.Context, Context, *session_states.SessionStates) error
+}
+
 // Context is an interface for transaction and executive args environment.
 type Context interface {
-	session_states.SessionStatesHandler
+	SessionStatesHandler
 	// NewTxn creates a new transaction for further execution.
 	// If old transaction is valid, it is committed first.
 	// It's used in BEGIN statement and DDL statements to commit old transaction.

@@ -1667,7 +1667,7 @@ func (e *SimpleExec) executeSetSessionStates(ctx context.Context, s *ast.SetSess
 	if err := decoder.Decode(&sessionStates); err != nil {
 		return errors.Trace(err)
 	}
-	return e.ctx.DecodeSessionStates(ctx, &sessionStates)
+	return e.ctx.DecodeSessionStates(ctx, e.ctx, &sessionStates)
 }
 
 func (e *SimpleExec) executeAdmin(s *ast.AdminStmt) error {

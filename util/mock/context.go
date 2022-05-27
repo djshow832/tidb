@@ -110,12 +110,12 @@ func (c *Context) ShowProcess() *util.ProcessInfo {
 }
 
 // EncodeSessionStates implements sessionctx.Context EncodeSessionStates interface.
-func (c *Context) EncodeSessionStates(context.Context, *session_states.SessionStates) error {
+func (c *Context) EncodeSessionStates(context.Context, sessionctx.Context, *session_states.SessionStates) error {
 	return errors.Errorf("Not Supported")
 }
 
 // DecodeSessionStates implements sessionctx.Context DecodeSessionStates interface.
-func (c *Context) DecodeSessionStates(context.Context, *session_states.SessionStates) error {
+func (c *Context) DecodeSessionStates(context.Context, sessionctx.Context, *session_states.SessionStates) error {
 	return errors.Errorf("Not Supported")
 }
 

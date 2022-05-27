@@ -1896,7 +1896,7 @@ func (e *ShowExec) fetchShowBuiltins() error {
 
 func (e *ShowExec) fetchShowSessionStates(ctx context.Context) error {
 	sessionStates := &session_states.SessionStates{}
-	err := e.ctx.EncodeSessionStates(ctx, sessionStates)
+	err := e.ctx.EncodeSessionStates(ctx, e.ctx, sessionStates)
 	if err != nil {
 		return err
 	}

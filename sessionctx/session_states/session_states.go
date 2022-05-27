@@ -1,13 +1,17 @@
 package session_states
 
 import (
-	"context"
 	"time"
 
 	"github.com/pingcap/tidb/parser/model"
 	ptypes "github.com/pingcap/tidb/parser/types"
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
 	"github.com/pingcap/tidb/types"
+)
+
+const (
+	StatePrepareStmt int = iota
+	StateBinding
 )
 
 type PreparedStmtInfo struct {
@@ -31,11 +35,20 @@ type LastDDLInfo struct {
 	SeqNum uint64 `json:"seq_num"`
 }
 
-type SessionStatesHandler interface {
-	// EncodeSessionStates encodes session states into a JSON.
-	EncodeSessionStates(context.Context, *SessionStates) error
-	// DecodeSessionStates decodes a map into session states.
-	DecodeSessionStates(context.Context, *SessionStates) error
+type BindRecord struct {
+	OriginalSQL string    `json:"original_sql"`
+	Db          string    `json:"db,omitempty"`
+	Bindings    []Binding `json:"bindings"`
+}
+
+type Binding struct {
+	BindSQL    string     `json:"bind_sql"`
+	Status     string     `json:"status"`
+	CreateTime types.Time `json:"create_time"`
+	UpdateTime types.Time `json:"update_time"`
+	Source     string     `json:"source"`
+	Charset    string     `json:"charset"`
+	Collation  string     `json:"collation"`
 }
 
 type SessionStates struct {
@@ -46,6 +59,7 @@ type SessionStates struct {
 	SystemVars           map[string]string            `json:"sys-vars,omitempty"`
 	PreparedStmts        map[uint32]*PreparedStmtInfo `json:"prepared-stmts,omitempty"`
 	PreparedStmtID       uint32                       `json:"prepared-stmt-id,omitempty"`
+	Bindings             []*BindRecord                `json:"bindings,omitempty"`
 	Status               uint16                       `json:"status,omitempty"`
 	CurrentDB            string                       `json:"current-db,omitempty"`
 	LastTxnInfo          string                       `json:"txn-info,omitempty"`

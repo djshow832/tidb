@@ -25,6 +25,7 @@ import (
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/session"
+	"github.com/pingcap/tidb/sessionctx/session_states"
 	"github.com/pingcap/tidb/util/arena"
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/stretchr/testify/require"
@@ -92,7 +93,7 @@ func CreateMockConn(t *testing.T, store kv.Storage, server *Server) MockConn {
 		Session: se,
 		stmts:   make(map[int]*TiDBStatement),
 	}
-	se.SetPreparedStmtsStatesHandler(tc)
+	se.SetSessionStatesHandler(session_states.StatePrepareStmt, tc)
 
 	cc := &clientConn{
 		server:     server,

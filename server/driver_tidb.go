@@ -18,7 +18,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/pingcap/tidb/sessionctx/session_states"
 	"strings"
 	"sync/atomic"
 
@@ -30,6 +29,8 @@ import (
 	"github.com/pingcap/tidb/parser/terror"
 	"github.com/pingcap/tidb/planner/core"
 	"github.com/pingcap/tidb/session"
+	"github.com/pingcap/tidb/sessionctx"
+	"github.com/pingcap/tidb/sessionctx/session_states"
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/chunk"
@@ -202,7 +203,7 @@ func (qd *TiDBDriver) OpenCtx(connID uint64, capability uint32, collation uint8,
 		Session: se,
 		stmts:   make(map[int]*TiDBStatement),
 	}
-	se.SetPreparedStmtsStatesHandler(tc)
+	se.SetSessionStatesHandler(session_states.StatePrepareStmt, tc)
 	return tc, nil
 }
 
@@ -298,7 +299,7 @@ func (tc *TiDBContext) GetStmtStats() *stmtstats.StatementStats {
 }
 
 // EncodeSessionStates implements SessionStatesHandler EncodeSessionStates interface.
-func (tc *TiDBContext) EncodeSessionStates(ctx context.Context, sessionStates *session_states.SessionStates) error {
+func (tc *TiDBContext) EncodeSessionStates(ctx context.Context, sctx sessionctx.Context, sessionStates *session_states.SessionStates) error {
 	sessionVars := tc.Session.GetSessionVars()
 	sessionStates.PreparedStmts = make(map[uint32]*session_states.PreparedStmtInfo, len(sessionVars.PreparedStmts))
 	for preparedID, preparedObj := range sessionVars.PreparedStmts {
@@ -330,7 +331,7 @@ func (tc *TiDBContext) EncodeSessionStates(ctx context.Context, sessionStates *s
 }
 
 // DecodeSessionStates implements SessionStatesHandler DecodeSessionStates interface.
-func (tc *TiDBContext) DecodeSessionStates(ctx context.Context, sessionStates *session_states.SessionStates) (err error) {
+func (tc *TiDBContext) DecodeSessionStates(ctx context.Context, sctx sessionctx.Context, sessionStates *session_states.SessionStates) (err error) {
 	sessionVars := tc.Session.GetSessionVars()
 	for id, preparedStmtInfo := range sessionStates.PreparedStmts {
 		// Set the next id and currentDB manually.

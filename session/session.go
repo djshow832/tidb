@@ -145,8 +145,8 @@ type Session interface {
 	// ExecutePreparedStmt executes a prepared statement.
 	ExecutePreparedStmt(ctx context.Context, stmtID uint32, param []types.Datum) (sqlexec.RecordSet, error)
 	DropPreparedStmt(stmtID uint32) error
-	// SetPreparedStmtsStatesHandler sets preparedStmtsStatesHandler.
-	SetPreparedStmtsStatesHandler(handler session_states.SessionStatesHandler)
+	// SetSessionStatesHandler sets SessionStatesHandler for type stateType.
+	SetSessionStatesHandler(stateType int, handler sessionctx.SessionStatesHandler)
 	SetClientCapability(uint32) // Set client capability flags.
 	SetConnectionID(uint64)
 	SetCommandValue(byte)
@@ -242,8 +242,8 @@ type session struct {
 	// allowed when tikv disk full happened.
 	diskFullOpt kvrpcpb.DiskFullOpt
 
-	// Used to encode and decode the states of prepared statements
-	preparedStmtsStatesHandler session_states.SessionStatesHandler
+	// Used to encode and decode each type of session states.
+	sessionStatesHandlers map[int]sessionctx.SessionStatesHandler
 
 	// StmtStats is used to count various indicators of each SQL in this session
 	// at each point in time. These data will be periodically taken away by the
@@ -2658,8 +2658,8 @@ func (s *session) RefreshVars(ctx context.Context) error {
 	return nil
 }
 
-func (s *session) SetPreparedStmtsStatesHandler(handler session_states.SessionStatesHandler) {
-	s.preparedStmtsStatesHandler = handler
+func (s *session) SetSessionStatesHandler(stateType int, handler sessionctx.SessionStatesHandler) {
+	s.sessionStatesHandlers[stateType] = handler
 }
 
 // CreateSession4Test creates a new session environment for test.
@@ -2709,6 +2709,7 @@ func CreateSessionWithOpt(store kv.Storage, opt *Opt) (Session, error) {
 
 	sessionBindHandle := bindinfo.NewSessionBindHandle(parser.New())
 	s.SetValue(bindinfo.SessionBindInfoKeyType, sessionBindHandle)
+	s.SetSessionStatesHandler(session_states.StateBinding, sessionBindHandle)
 	// Add stats collector, and it will be freed by background stats worker
 	// which periodically updates stats using the collected data.
 	if do.StatsHandle() != nil && do.StatsUpdating() {
@@ -2954,12 +2955,13 @@ func createSessionWithOpt(store kv.Storage, opt *Opt) (*session, error) {
 		return nil, err
 	}
 	s := &session{
-		store:           store,
-		sessionVars:     variable.NewSessionVars(),
-		ddlOwnerChecker: dom.DDL().OwnerManager(),
-		client:          store.GetClient(),
-		mppClient:       store.GetMPPClient(),
-		stmtStats:       stmtstats.CreateStatementStats(),
+		store:                 store,
+		sessionVars:           variable.NewSessionVars(),
+		ddlOwnerChecker:       dom.DDL().OwnerManager(),
+		client:                store.GetClient(),
+		mppClient:             store.GetMPPClient(),
+		stmtStats:             stmtstats.CreateStatementStats(),
+		sessionStatesHandlers: make(map[int]sessionctx.SessionStatesHandler),
 	}
 	s.functionUsageMu.builtinFunctionUsage = make(telemetry.BuiltinFunctionsUsage)
 	if plannercore.PreparedPlanCacheEnabled() {
@@ -2989,11 +2991,12 @@ func createSessionWithOpt(store kv.Storage, opt *Opt) (*session, error) {
 // a lock context, which cause we can't call createSession directly.
 func CreateSessionWithDomain(store kv.Storage, dom *domain.Domain) (*session, error) {
 	s := &session{
-		store:       store,
-		sessionVars: variable.NewSessionVars(),
-		client:      store.GetClient(),
-		mppClient:   store.GetMPPClient(),
-		stmtStats:   stmtstats.CreateStatementStats(),
+		store:                 store,
+		sessionVars:           variable.NewSessionVars(),
+		client:                store.GetClient(),
+		mppClient:             store.GetMPPClient(),
+		stmtStats:             stmtstats.CreateStatementStats(),
+		sessionStatesHandlers: make(map[int]sessionctx.SessionStatesHandler),
 	}
 	s.functionUsageMu.builtinFunctionUsage = make(telemetry.BuiltinFunctionsUsage)
 	if plannercore.PreparedPlanCacheEnabled() {
@@ -3449,7 +3452,7 @@ func (s *session) GetStmtStats() *stmtstats.StatementStats {
 	return s.stmtStats
 }
 
-func (s *session) EncodeSessionStates(ctx context.Context, sessionStates *session_states.SessionStates) (err error) {
+func (s *session) EncodeSessionStates(ctx context.Context, sctx sessionctx.Context, sessionStates *session_states.SessionStates) (err error) {
 	s.txn.mu.Lock()
 	valid := s.txn.Valid()
 	s.txn.mu.Unlock()
@@ -3465,7 +3468,10 @@ func (s *session) EncodeSessionStates(ctx context.Context, sessionStates *sessio
 		}
 	}
 
-	if err = s.preparedStmtsStatesHandler.EncodeSessionStates(ctx, sessionStates); err != nil {
+	if err = s.sessionStatesHandlers[session_states.StatePrepareStmt].EncodeSessionStates(ctx, s, sessionStates); err != nil {
+		return
+	}
+	if err = s.sessionStatesHandlers[session_states.StateBinding].EncodeSessionStates(ctx, s, sessionStates); err != nil {
 		return
 	}
 	if err = s.sessionVars.EncodeSessionStates(ctx, sessionStates); err != nil {
@@ -3476,9 +3482,12 @@ func (s *session) EncodeSessionStates(ctx context.Context, sessionStates *sessio
 	return
 }
 
-func (s *session) DecodeSessionStates(ctx context.Context, sessionStates *session_states.SessionStates) (err error) {
+func (s *session) DecodeSessionStates(ctx context.Context, sctx sessionctx.Context, sessionStates *session_states.SessionStates) (err error) {
 	// Decode prepared statements first because it will affect many session states.
-	if err = s.preparedStmtsStatesHandler.DecodeSessionStates(ctx, sessionStates); err != nil {
+	if err = s.sessionStatesHandlers[session_states.StatePrepareStmt].DecodeSessionStates(ctx, s, sessionStates); err != nil {
+		return
+	}
+	if err = s.sessionStatesHandlers[session_states.StateBinding].DecodeSessionStates(ctx, s, sessionStates); err != nil {
 		return
 	}
 
